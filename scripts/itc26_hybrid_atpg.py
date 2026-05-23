@@ -31,7 +31,6 @@ def _canonicalize_defect_name(name):
         if a in _ADC_MAC_SIGNALS and b in _ADC_MAC_SIGNALS:
             s1, s2 = sorted([a, b])
             return f"{_ADC_MAC_PREFIX}{s1}_{s2}_{tail}"
-    # Couldn't parse with the known vocabulary; leave as-is.
     return name
 
 
@@ -49,7 +48,6 @@ class ATPGCoverageEvaluator:
     def __init__(self, file_r, file_wr, file_vco_p, file_vco_s):
         print("Loading CSV matrices into memory...")
         
-        # Store filenames to check for the 'pruned' substring during evaluation
         self.file_r = file_r
         self.file_wr = file_wr
         self.file_vco_p = file_vco_p
@@ -60,21 +58,17 @@ class ATPGCoverageEvaluator:
         self.df_vco_p = pd.read_csv(file_vco_p, index_col=0)
         self.df_vco_s = pd.read_csv(file_vco_s, index_col=0)
 
-        # Canonicalize row labels so that ATPG names like 'BL_WL_3' and LUT
-        # names like 'WL_BL_3' refer to the same physical defect.
+        # Canonicalize row labels and standardize column names
         for df in [self.df_r, self.df_wr, self.df_vco_p, self.df_vco_s]:
             df.index = [_canonicalize_defect_name(x) for x in df.index]
 
-        # Standardize column names universally using the helper method
         for df in [self.df_r, self.df_wr, self.df_vco_p, self.df_vco_s]:
             df.columns = [self._standardize_name(col) for col in df.columns]
 
-        # The global check database pool MUST be the union of all defects
-        # across the 3 physical datasets to match the 986 "Total Evaluated".
+        # Defect pool = union across the 3 physical datasets
         self.all_defects = set(self.df_r.index) | set(self.df_vco_p.index) | set(self.df_vco_s.index)
         self.total_defects = len(self.all_defects)
 
-        # Location-level view: each physical site has ~10 defect variants
         self.all_base_locations = {_get_base_location(d) for d in self.all_defects}
         self.total_locations = len(self.all_base_locations)
 
@@ -107,7 +101,6 @@ class ATPGCoverageEvaluator:
             "rp_20_rn_20_inp_0.55_inn_0.55_neighs_P000": "rp_20.0_rn_0.008_inp_0.85_inn_0.25_neighs_NNNP"
         }
         
-        # Standardize mapping keys/values to ensure perfect matches
         std_mapping = {self._standardize_name(k): self._standardize_name(v) for k, v in mapping.items()}
         
         return std_mapping.get(std_pat, std_pat)
@@ -120,12 +113,11 @@ class ATPGCoverageEvaluator:
                 print(f"  [warn] column not found in {source_filename}: {search_pattern} (original: {pattern})")
             return set()
         
-        # We no longer restrict by intersection; if it's detected (1), it counts!
         detected_series = df[search_pattern]
         return set(detected_series[detected_series == 1].index)
 
     def evaluate_pattern(self, pattern, is_fast):
-        # 1. Fetch the raw defect hits for this pattern based on fast/slow
+        # Fetch hits from fast (r) or slow (w+r) dataset, union with VCO datasets
         if is_fast:
             det_rw = self._get_detected_defects(self.df_r, pattern, source_filename=self.file_r)
         else:
@@ -134,17 +126,13 @@ class ATPGCoverageEvaluator:
         det_vco_p = self._get_detected_defects(self.df_vco_p, pattern, source_filename=self.file_vco_p)
         det_vco_s = self._get_detected_defects(self.df_vco_s, pattern, source_filename=self.file_vco_s)
 
-        # 2. Combine the sets to find all defects hit by this specific pattern
         current_pattern_hits = det_rw | det_vco_p | det_vco_s
 
-        # 3. Calculate purely *added* defects by subtracting previously found ones
         new_hits = current_pattern_hits - self.detected_global
         added_defects = len(new_hits)
         
-        # 4. Update the global accumulator
         self.detected_global.update(new_hits)
         
-        # 5. Print stats matching the Overall Final Test Accuracy (out of 986)
         detected_locs = {_get_base_location(d) for d in self.detected_global}
         print(f"Pattern: {pattern} ({'FAST' if is_fast else 'SLOW'})")
         print(f"  -> Added Defects Covered:  {added_defects}")
@@ -183,7 +171,6 @@ class ADCOffsetEvaluator:
     def __init__(self, file_full, file_vco, file_vco_32x2):
         print("\nLoading ADC Diff CSV matrices into memory...")
         
-        # Store filenames to check for the 'pruned' substring during evaluation
         self.file_full = file_full
         self.file_vco = file_vco
         self.file_vco_32x2 = file_vco_32x2
@@ -192,11 +179,9 @@ class ADCOffsetEvaluator:
         self.df_vco = pd.read_csv(file_vco, index_col=0)
         self.df_vco_32x2 = pd.read_csv(file_vco_32x2, index_col=0)
 
-        # Canonicalize defect row labels (see module-level comment)
         for df in [self.df_full, self.df_vco, self.df_vco_32x2]:
             df.index = [_canonicalize_defect_name(x) for x in df.index]
 
-        # Standardize column names universally
         for df in [self.df_full, self.df_vco, self.df_vco_32x2]:
             df.columns = [self._standardize_name(col) for col in df.columns]
 
@@ -224,7 +209,6 @@ class ADCOffsetEvaluator:
             "rp_20_rn_20_inp_0.55_inn_0.55_neighs_P000": "rp_20.0_rn_0.008_inp_0.85_inn_0.25_neighs_NNNP"
         }
         
-        # Standardize mapping keys/values to ensure perfect matches
         std_mapping = {self._standardize_name(k): self._standardize_name(v) for k, v in mapping.items()}
         
         return std_mapping.get(std_pat, std_pat)
@@ -238,13 +222,11 @@ class ADCOffsetEvaluator:
             (self.df_vco_32x2, self.file_vco_32x2)
         ]
 
-        # Accumulate offset data across all three CSVs for the mapped pattern
         for df, filename in datasets:
             search_pattern = self._get_mapped_pattern(pattern, filename)
             
             if search_pattern in df.columns:
                 series = df[search_pattern]
-                # Keep only non-zero offsets
                 series = series[series != 0].dropna()
                 for defect, offset in series.items():
                     if offset not in offset_to_defects:
@@ -252,7 +234,6 @@ class ADCOffsetEvaluator:
                     offset_to_defects[offset].add(defect)
 
         print(f"Pattern: {pattern}")
-        # Sort and print mapping similarly to the log template
         unique_offsets = sorted(offset_to_defects.keys())
         for offset in unique_offsets:
             defects = sorted(list(offset_to_defects[offset]))
@@ -264,20 +245,16 @@ class ADCOffsetEvaluator:
         print("\n--- Running ADC Offset Breakdown Pipeline ---")
         all_pattern_offsets = []
         for pattern in patterns:
-            # Capture the unique offsets evaluated for each pattern
             unique_offsets = self.evaluate_pattern_offsets(pattern)
             all_pattern_offsets.append(unique_offsets)
             
-        # Log all the np.arrays at the end below the rest of the logs
         print("\n--- ADC Offset NumPy Arrays Summary ---")
         for i, offsets in enumerate(all_pattern_offsets):
             items = [str(o) for o in offsets]
             lines = []
-            # Group items by 10 per line for cleaner formatting
             for j in range(0, len(items), 10):
                 lines.append("    " + ", ".join(items[j:j+10]))
             
-            # Format output correctly to match Python syntax for np.array
             array_str = f"pattern_{i} = np.array([\n" + ",\n".join(lines) + "\n])\n"
             print(array_str)
 
@@ -286,12 +263,10 @@ class PerLayerDefectCoverageEvaluator:
     def __init__(self, sim_file='hybrid_sim_results.txt', lut_file='combined_offsets_lut_r'):
         self.sim_file = sim_file
         self.lut_file = lut_file
-        # Legacy constant kept only so old call-sites that reference it don't crash. 
-        self.TOTAL_DEFECTS = 775 + 210  # 985 (off by 1; real LUT pool is 986)
+        self.TOTAL_DEFECTS = 775 + 210  # legacy constant; real LUT pool is 986
         self.active_offsets_per_layer = defaultdict(set)
         self.offset_to_defects = defaultdict(set)
         self.layer_to_defects = defaultdict(list)
-        # Track all unique base defect locations to calculate coverage percentages
         self.all_base_defects = set()
 
     def _total_defects(self):
@@ -312,11 +287,10 @@ class PerLayerDefectCoverageEvaluator:
         return defect_name
                       
     def parse_data(self):
-        # 1. Parse Simulation Results to locate Active Offsets
+        # Simulation results: locate active offsets per layer
         with open(self.sim_file, 'r') as f:
             sim_content = self._clean_text(f.read())
             
-        # Regex extracts layer, offset, mismatch %, and total test patterns
         pattern = r'(fc\d):\s*([\-\.\d]+)\s*\|\s*([\d\.]+)%\s*\|\s*([\d\.]+)%\s*\|\s*(\d+)'
         for match in re.finditer(pattern, sim_content):
             layer = match.group(1)
@@ -324,11 +298,11 @@ class PerLayerDefectCoverageEvaluator:
             mismatch = float(match.group(4))
             total_tested = int(match.group(5))
             
-            # Active condition: Effective detection (>0%) & Tested heavily enough (>= 32)
+            # Active: mismatch > 0% and tested on >= 32 patterns
             if mismatch > 0.0 and total_tested >= 32:
                 self.active_offsets_per_layer[layer].add(offset)
                 
-        # 2. Parse LUT File to map offsets -> specific string defects
+        # LUT file: map offsets -> defects
         with open(self.lut_file, 'r') as f:
             lut_content = self._clean_text(f.read())
             
@@ -338,15 +312,12 @@ class PerLayerDefectCoverageEvaluator:
                 offset_val = float(match.group(1))
                 defects_list_str = match.group(2)
                 
-                # Safely evaluate string representation of Python list 
                 defects = ast.literal_eval(defects_list_str)
 
-                # Canonicalize so LUT labels align with the ATPG CSV labels
                 defects = [_canonicalize_defect_name(d) for d in defects]
 
                 self.offset_to_defects[offset_val].update(defects)
                 
-                # Populate the global pool of unique base locations
                 for d in defects:
                     self.all_base_defects.add(self._get_base_name(d))
             except Exception:
@@ -356,7 +327,6 @@ class PerLayerDefectCoverageEvaluator:
         self.parse_data()
         
         TOTAL_LOCATIONS = len(self.all_base_defects)
-        # Use the real pool size (derived from LUT) instead of the legacy 985.
         total_defects = self._total_defects() or 1
 
         print("\n" + "="*100)
@@ -364,11 +334,9 @@ class PerLayerDefectCoverageEvaluator:
         print("="*100)
         print(f"Inference defect pool (derived): {total_defects}  "
               f"(legacy constant was {self.TOTAL_DEFECTS})")
-        # Updated header to accommodate the new unique location metrics
         print(f"{'Layer':<7} | {'Active Offsets':<15} | {'Overall Defects':<16} | {'Overall %':<10} | {'Unique Locs':<12} | {'Unique Loc %':<12}")
         print("-" * 100)
         
-        # Explicitly iterate through all expected layers to catch 'fc4' even if it's 0
         all_layers = ['fc1', 'fc2', 'fc3', 'fc4']
         
         for layer in all_layers:
@@ -376,31 +344,25 @@ class PerLayerDefectCoverageEvaluator:
             unique_defects = set()
             unique_locations = set()
             
-            # Union all defects triggered by all active offsets for this specific layer
             for offset in active_offsets:
                 defects = self.offset_to_defects[offset]
                 unique_defects.update(defects)
                 
-                # Extract and store the base names for unique location tracking
                 for d in defects:
                     unique_locations.add(self._get_base_name(d))
             
             self.layer_to_defects[layer] = sorted(list(unique_defects))
             
-            # 1. Overall coverage metrics (now uses the data-derived denominator)
             count = len(unique_defects)
             coverage = (count / total_defects) * 100
             
-            # 2. Unique location coverage metrics (New)
             loc_count = len(unique_locations)
             loc_coverage = (loc_count / TOTAL_LOCATIONS) * 100 if TOTAL_LOCATIONS > 0 else 0
             
-            # Formatted row output
             print(f"{layer:<7} | {len(active_offsets):<15} | {count:<16} | {coverage:<9.2f}% | {loc_count:<12} | {loc_coverage:.2f}%")
             
         print("-" * 100)
         
-        # Print the accumulated unique defect lists per layer
         print("\n" + "="*100)
         print("--- Accumulated Defect Vectors Per Layer ---")
         print("="*100)
@@ -408,12 +370,10 @@ class PerLayerDefectCoverageEvaluator:
             print(f"\n{layer}_defects = {self.layer_to_defects[layer]}")
 
 
-# ============================================================================
-# Class 4: Combined Per-Layer Defect Coverage
-# ----------------------------------------------------------------------------
+# Combined Per-Layer Defect Coverage: merges ATPG (Class 1) with inference (Class 3)
 class CombinedPerLayerCoverageEvaluator:
     """Merge per-layer ATPG evidence (Class 1) with inference evidence (Class 3)."""
-    LEGACY_TOTAL_DEFECTS = 775 + 210  # 985
+    LEGACY_TOTAL_DEFECTS = 775 + 210
 
     def __init__(
         self,
@@ -431,11 +391,10 @@ class CombinedPerLayerCoverageEvaluator:
         self.sim_file, self.lut_file = sim_file, lut_file
         self.layer_vectors = layer_vectors
 
-        self.atpg_layer_defects = {}       # layer -> set[str]
-        self.inference_layer_defects = {}  # layer -> set[str]
-        self.combined_layer_defects = {}   # layer -> set[str]
+        self.atpg_layer_defects = {}
+        self.inference_layer_defects = {}
+        self.combined_layer_defects = {}
 
-        # Full defect universes, captured from the actual inputs.
         self.atpg_pool = set()
         self.inference_pool = set()
 
@@ -457,7 +416,6 @@ class CombinedPerLayerCoverageEvaluator:
             file_vco_s=self.file_vco_s,
         )
 
-        # Capture the full ATPG defect universe (every defect hit by any pattern across all layers) so we can
         self.atpg_pool = set(evaluator.all_defects)
 
         for layer, (fast_patterns, slow_patterns) in self.layer_vectors.items():
@@ -471,13 +429,12 @@ class CombinedPerLayerCoverageEvaluator:
             )
             print("-" * 80)
 
-            # Reset the accumulator so this layer's run is independent.
+            # Reset accumulator so each layer's run is independent
             evaluator.detected_global = set()
             evaluator.run_sequence(
                 fast_patterns=active_fast,
                 slow_patterns=active_slow,
             )
-            # Snapshot the set for this layer (copy, since we reset next round).
             self.atpg_layer_defects[layer] = set(evaluator.detected_global)
 
     def _run_inference(self):
@@ -491,8 +448,6 @@ class CombinedPerLayerCoverageEvaluator:
         )
         layer_evaluator.evaluate_and_report()
 
-        # Capture the full inference defect universe (every defect the LUT
-        # knows about, across all offsets).
         self.inference_pool = set().union(*layer_evaluator.offset_to_defects.values()) \
             if layer_evaluator.offset_to_defects else set()
 
@@ -501,7 +456,6 @@ class CombinedPerLayerCoverageEvaluator:
             for layer, defects in layer_evaluator.layer_to_defects.items()
         }
 
-    # ----------------------------------------------------------------- Combine
     def run(self):
         self._run_atpg_per_layer()
         self._run_inference()
@@ -510,16 +464,14 @@ class CombinedPerLayerCoverageEvaluator:
         for layer in all_layers:
             atpg = self.atpg_layer_defects.get(layer, set())
             inf = self.inference_layer_defects.get(layer, set())
-            self.combined_layer_defects[layer] = atpg | inf  # duplicates dropped
+            self.combined_layer_defects[layer] = atpg | inf
 
         self._report(all_layers)
 
-    # ----------------------------------------------------------------- Report
     def _report(self, all_layers):
-        true_total = self.total_defects  # data-derived, guaranteed >= any union
+        true_total = self.total_defects
         legacy_total = self.LEGACY_TOTAL_DEFECTS
 
-        # Location-level denominator: union of base locations across the two defect pools.
         atpg_locs = {_get_base_location(d) for d in self.atpg_pool}
         inf_locs  = {_get_base_location(d) for d in self.inference_pool}
         total_locs = len(atpg_locs | inf_locs)
@@ -569,7 +521,6 @@ class CombinedPerLayerCoverageEvaluator:
 if __name__ == "__main__":
     fast_atpg = []
     slow_atpg = []
-    # Newly attached arrays
     #fc4
     # fast_atpg=[]
     # "rp_20.0_rn_0.008_inp_0.85_inn_0.25_neighs_P0PP",
@@ -695,7 +646,6 @@ if __name__ == "__main__":
             file_vco_s=os.path.join(base_dir, "final_binary_matrix_vco_small.csv")
         )
 
-        # Remove commented out inputs from running directly
         active_fast = [p for p in fast_atpg if not p.strip().startswith('#')]
         active_slow = [p for p in slow_atpg if not p.strip().startswith('#')]
         evaluator.run_sequence(fast_patterns=active_fast, slow_patterns=active_slow)
