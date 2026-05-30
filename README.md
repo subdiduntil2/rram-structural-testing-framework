@@ -4,4 +4,4 @@ This repository includes the codebase required to perform defect-oriented analys
 Future steps include:
 1. Full validation of the hybrid framework for the KWS dataset (current results are sub-optimal)
 2. Algorithmic improvements, i.e. on loss function for synthetic input generation
-3. Synthetic data for full functionality of the repository regarding SPICE fault modeling &amp RRAM measurement data analysis, in order to overcome the NDA issues.
+3. Synthetic data for full functionality of the repository regarding SPICE fault modeling and RRAM measurement data analysis, in order to overcome the NDA issues.
